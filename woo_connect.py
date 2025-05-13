@@ -14,49 +14,59 @@ wcapi = API(
 
 @app.route("/products")
 def get_products():
-    products = wcapi.get("products", params={"per_page": 70, "status": "publish"}).json()
     output = []
+    page = 1
+    per_page = 100
 
-    for product in products:
-        short_desc = product.get("short_description", "").strip()
-        desc = product.get("description", "").strip()
-        price = 0.0
-        regular_price = 0.0
-        sale_price = 0.0
-        sizes = []
-        color = '-'
+    while True:
+        products = wcapi.get("products", params={"per_page": per_page, "page": page, "status": "publish"}).json()
 
-        if product["type"] == "variable":
-            variations = wcapi.get(f"products/{product['id']}/variations").json()
-            for v in variations:
-                price = v.get("price", "—")
-                regular_price = v.get("regular_price", "—")
-                sale_price = v.get("sale_price", "—")
-                available = v.get("stock_status") == "instock"
-                for attr in v["attributes"]:
-                    if attr["name"] == "Μέγεθος" and available:
-                        sizes.append(attr["option"])
-                    if attr["name"] == "Χρώμα":
-                        color = attr["option"]
-        else:
-            if product.get("stock_status") == "instock":
-                sizes.append("ONE SIZE")
+        if not products:
+            break
 
-        output.append({
-            "name": product['name'],
-            "id": product['id'],
-            "short_description": short_desc if short_desc else "—",
-            "description": desc if desc else "—",
-            "price": price,
-            "regular_price": regular_price,
-            "sale_price": sale_price,
-            "color": color,
-            "available_sizes": sizes,
-            "image": product["images"][0]["src"] if product["images"] else None,
-            "categories": [cat["name"] for cat in product["categories"]] if product["categories"] else []
-        })
+        for product in products:
+            short_desc = product.get("short_description", "").strip()
+            desc = product.get("description", "").strip()
+            price = 0.0
+            regular_price = 0.0
+            sale_price = 0.0
+            sizes = []
+            color = '-'
+
+            if product["type"] == "variable":
+                variations = wcapi.get(f"products/{product['id']}/variations").json()
+                for v in variations:
+                    price = v.get("price", "—")
+                    regular_price = v.get("regular_price", "—")
+                    sale_price = v.get("sale_price", "—")
+                    available = v.get("stock_status") == "instock"
+                    for attr in v["attributes"]:
+                        if attr["name"] == "Μέγεθος" and available:
+                            sizes.append(attr["option"])
+                        if attr["name"] == "Χρώμα":
+                            color = attr["option"]
+            else:
+                if product.get("stock_status") == "instock":
+                    sizes.append("ONE SIZE")
+
+            output.append({
+                "name": product['name'],
+                "id": product['id'],
+                "short_description": short_desc if short_desc else "—",
+                "description": desc if desc else "—",
+                "price": price,
+                "regular_price": regular_price,
+                "sale_price": sale_price,
+                "color": color,
+                "available_sizes": sizes,
+                "image": product["images"][0]["src"] if product["images"] else None,
+                "categories": [cat["name"] for cat in product["categories"]] if product["categories"] else []
+            })
+
+        page += 1
 
     return jsonify(output)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
