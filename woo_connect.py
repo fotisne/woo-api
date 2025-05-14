@@ -61,7 +61,8 @@ def get_products():
             "color": color,
             "available_sizes": sizes,
             "image": product["images"][0]["src"] if product["images"] else None,
-            "categories": [cat["name"] for cat in product["categories"]] if product["categories"] else []
+            "categories": [cat["name"] for cat in product["categories"]] if product["categories"] else [],
+            "permalink": product.get("permalink")
         })
 
     return jsonify(output)
