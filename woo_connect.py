@@ -1,10 +1,11 @@
 from flask import Flask, jsonify, request
 from woocommerce import API
+import unicodedata
 import os
 
 app = Flask(__name__)
 
-# WooCommerce σύνδεση μέσω μεταβλητών περιβάλλοντος
+# WooCommerce API σύνδεση
 wcapi = API(
     url="https://www.joyfashionhouse.com",
     consumer_key=os.getenv("WC_CONSUMER_KEY"),
@@ -12,7 +13,24 @@ wcapi = API(
     version="wc/v3"
 )
 
-# 🔹 API με pagination για frontend χρήση
+# 🔹 Basic normalize (χωρίς τόνους, κεφαλαία κλπ)
+def normalize(text):
+    return ''.join(
+        c for c in unicodedata.normalize("NFD", text.lower())
+        if unicodedata.category(c) != 'Mn'
+    )
+
+# 🔹 Εξαγωγή χρώματος (αν υπάρχει)
+def extract_color(product):
+    if product["type"] == "variable":
+        variations = wcapi.get(f"products/{product['id']}/variations").json()
+        for v in variations:
+            for attr in v.get("attributes", []):
+                if attr["name"].lower() == "χρώμα":
+                    return attr["option"]
+    return "-"
+
+# 🔹 Endpoint: /products (με pagination)
 @app.route("/products")
 def get_products(): 
     try:
@@ -31,7 +49,7 @@ def get_products():
         regular_price = 0.0
         sale_price = 0.0
         sizes = []
-        color = '-'
+        color = extract_color(product)
 
         if product["type"] == "variable":
             variations = wcapi.get(f"products/{product['id']}/variations").json()
@@ -43,8 +61,6 @@ def get_products():
                 for attr in v["attributes"]:
                     if attr["name"] == "Μέγεθος" and available:
                         sizes.append(attr["option"])
-                    if attr["name"] == "Χρώμα":
-                        color = attr["option"]
         else:
             if product.get("stock_status") == "instock":
                 sizes.append("ONE SIZE")
@@ -66,7 +82,7 @@ def get_products():
 
     return jsonify(output)
 
-# 🔹 Πλήρες export όλων των προϊόντων για τον agent
+# 🔹 Endpoint: /products-full
 @app.route("/products-full")
 def get_all_products():
     all_products = []
@@ -85,7 +101,7 @@ def get_all_products():
             regular_price = 0.0
             sale_price = 0.0
             sizes = []
-            color = '-'
+            color = extract_color(product)
 
             if product["type"] == "variable":
                 variations = wcapi.get(f"products/{product['id']}/variations").json()
@@ -97,8 +113,6 @@ def get_all_products():
                     for attr in v["attributes"]:
                         if attr["name"] == "Μέγεθος" and available:
                             sizes.append(attr["option"])
-                        if attr["name"] == "Χρώμα":
-                            color = attr["option"]
             else:
                 if product.get("stock_status") == "instock":
                     sizes.append("ONE SIZE")
@@ -122,6 +136,32 @@ def get_all_products():
 
     return jsonify(all_products)
 
-# 🔚 Εκκίνηση του Flask app
+# 🔹 ΝΕΟ Endpoint: /search (για GPT agent)
+@app.route("/search")
+def search():
+    query = request.args.get("query", "")
+    if not query:
+        return jsonify([])
+
+    keywords = [normalize(k) for k in query.split()]
+    results = []
+
+    # Παίρνουμε μόνο τα πρώτα 100 προϊόντα (για ταχύτητα)
+    response = wcapi.get("products", params={"per_page": 100, "status": "publish"})
+    products = response.json()
+
+    for product in products:
+        name = normalize(product.get("name", ""))
+        if all(k in name for k in keywords):
+            results.append({
+                "id": product.get("id"),
+                "name": product.get("name"),
+                "color": extract_color(product),
+                "permalink": product.get("permalink")
+            })
+
+    return jsonify(results)
+
+# 🔚 Εκκίνηση
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
