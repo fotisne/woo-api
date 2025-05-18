@@ -2,10 +2,12 @@ from flask import Flask, jsonify, request
 from woocommerce import API
 import unicodedata
 import os
+import json
+import requests
 
 app = Flask(__name__)
 
-# WooCommerce API σύνδεση
+# 🔐 WooCommerce σύνδεση (χρησιμοποιείται μόνο για τα live endpoints)
 wcapi = API(
     url="https://www.joyfashionhouse.com",
     consumer_key=os.getenv("WC_CONSUMER_KEY"),
@@ -13,14 +15,14 @@ wcapi = API(
     version="wc/v3"
 )
 
-# 🔹 Καθαρισμός κειμένου (χωρίς τόνους, πεζά)
+# 🔠 Normalize Greek text
 def normalize(text):
     return ''.join(
         c for c in unicodedata.normalize("NFD", text.lower())
         if unicodedata.category(c) != 'Mn'
     )
 
-# 🔹 Απόσπαση χρώματος από variations
+# 🎨 Εξαγωγή χρώματος
 def extract_color(product):
     if product["type"] == "variable":
         variations = wcapi.get(f"products/{product['id']}/variations").json()
@@ -30,7 +32,7 @@ def extract_color(product):
                     return attr["option"]
     return "-"
 
-# 🔹 GET /products με pagination
+# 📦 Endpoint: /products (με pagination)
 @app.route("/products")
 def get_products():
     try:
@@ -82,7 +84,7 @@ def get_products():
 
     return jsonify(output)
 
-# 🔹 GET /products-full - όλα τα προϊόντα (χωρίς pagination)
+# 📦 Endpoint: /products-full (όλα τα προϊόντα)
 @app.route("/products-full")
 def get_all_products():
     all_products = []
@@ -136,7 +138,10 @@ def get_all_products():
 
     return jsonify(all_products)
 
-# 🔹 ΝΕΟ: GET /search?query=λέξη - επιστρέφει προϊόντα που ταιριάζουν στο query
+# 🧠 ΝΕΟ: Αναζήτηση προϊόντων με βάση local JSON από GitHub
+PRODUCTS_JSON_URL = "https://raw.githubusercontent.com/fotisne/woo-api/main/products-full.json"
+LOCAL_PRODUCTS = requests.get(PRODUCTS_JSON_URL).json()
+
 @app.route("/search")
 def search():
     query = request.args.get("query", "")
@@ -146,24 +151,18 @@ def search():
     keywords = [normalize(k) for k in query.split()]
     results = []
 
-    # Fetch τα πρώτα 100 προϊόντα για απόδοση
-    response = wcapi.get("products", params={"per_page": 100, "status": "publish"})
-    products = response.json()
-
-    for product in products:
+    for product in LOCAL_PRODUCTS:
         name = normalize(product.get("name", ""))
-        desc = normalize(product.get("short_description", ""))
-        if all(k in name or k in desc for k in keywords):
+        if all(k in name for k in keywords):
             results.append({
                 "id": product.get("id"),
                 "name": product.get("name"),
-                "color": extract_color(product),
+                "color": product.get("color"),
                 "permalink": product.get("permalink")
             })
 
     return jsonify(results)
 
-# 🔚 Εκκίνηση του Flask app
+# 🏁 Εκκίνηση Flask
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
