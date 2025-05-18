@@ -13,14 +13,14 @@ wcapi = API(
     version="wc/v3"
 )
 
-# 🔹 Basic normalize (χωρίς τόνους, κεφαλαία κλπ)
+# 🔹 Καθαρισμός κειμένου (χωρίς τόνους, πεζά)
 def normalize(text):
     return ''.join(
         c for c in unicodedata.normalize("NFD", text.lower())
         if unicodedata.category(c) != 'Mn'
     )
 
-# 🔹 Εξαγωγή χρώματος (αν υπάρχει)
+# 🔹 Απόσπαση χρώματος από variations
 def extract_color(product):
     if product["type"] == "variable":
         variations = wcapi.get(f"products/{product['id']}/variations").json()
@@ -30,9 +30,9 @@ def extract_color(product):
                     return attr["option"]
     return "-"
 
-# 🔹 Endpoint: /products (με pagination)
+# 🔹 GET /products με pagination
 @app.route("/products")
-def get_products(): 
+def get_products():
     try:
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 50))
@@ -82,7 +82,7 @@ def get_products():
 
     return jsonify(output)
 
-# 🔹 Endpoint: /products-full
+# 🔹 GET /products-full - όλα τα προϊόντα (χωρίς pagination)
 @app.route("/products-full")
 def get_all_products():
     all_products = []
@@ -136,7 +136,7 @@ def get_all_products():
 
     return jsonify(all_products)
 
-# 🔹 ΝΕΟ Endpoint: /search (για GPT agent)
+# 🔹 ΝΕΟ: GET /search?query=λέξη - επιστρέφει προϊόντα που ταιριάζουν στο query
 @app.route("/search")
 def search():
     query = request.args.get("query", "")
@@ -146,13 +146,14 @@ def search():
     keywords = [normalize(k) for k in query.split()]
     results = []
 
-    # Παίρνουμε μόνο τα πρώτα 100 προϊόντα (για ταχύτητα)
+    # Fetch τα πρώτα 100 προϊόντα για απόδοση
     response = wcapi.get("products", params={"per_page": 100, "status": "publish"})
     products = response.json()
 
     for product in products:
         name = normalize(product.get("name", ""))
-        if all(k in name for k in keywords):
+        desc = normalize(product.get("short_description", ""))
+        if all(k in name or k in desc for k in keywords):
             results.append({
                 "id": product.get("id"),
                 "name": product.get("name"),
@@ -162,6 +163,7 @@ def search():
 
     return jsonify(results)
 
-# 🔚 Εκκίνηση
+# 🔚 Εκκίνηση του Flask app
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
